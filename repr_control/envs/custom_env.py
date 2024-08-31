@@ -120,7 +120,7 @@ class CustomVecEnv(CustomEnv):
             next_state = self.dynamics(self.state, self.rescale_action(action))
         noisy_next_state = next_state + torch.normal(0, self.sigma, next_state.shape, device=self.device)
         self.state = torch.clip(noisy_next_state, self.obs_low, self.obs_high)
-        reward = self.rewards(self.state, action).unsqueeze(dim=1)
+        reward = self.rewards(self.state, action)
         # reward = reward.squeeze().item()
         done = False
         info = {}
