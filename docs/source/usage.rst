@@ -4,7 +4,7 @@ Usage
 .. _run_samples:
 
 1. Defining nonlinear dynamics
-----------------
+------------------------------
 
 The dynamics is defined in ``repr_control/define_problem.py``. 
 The following items should be defined:
@@ -183,7 +183,7 @@ I placed a example results in the `examples` folder, you can run the following t
    $ python scripts/eval.py ./examples/example_results/rfsac/Pendulum/seed_0_2024-07-18-14-50-35
 
 
-1. Use controller elsewhere
+4. Use controller elsewhere
 ----------------------------
 
    Add the following line to your python code to load training results as a controller,
