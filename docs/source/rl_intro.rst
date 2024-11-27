@@ -3,7 +3,7 @@
 RL Quickstart
 ==============
 
-We explain how to initialize training a RL agent in 
+We explain how to initialize and train a RL agent in `solve.py <https://github.com/CoNG-harvard/repr_control/blob/published/repr_control/solve.py>`_.
 
 Train a RL agent
 ----------------
