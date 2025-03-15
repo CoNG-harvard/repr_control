@@ -7,6 +7,11 @@ from torch import nn
 import os
 import pickle as pkl
 
+from torch.func import functional_call
+from torch.func import stack_module_state
+from torch import vmap
+
+
 
 def unpack_batchv2(batch):
   return batch.state, batch.action, batch.rewards, batch.next_state, batch.next_action,batch.next_reward,batch.next_next_state,batch.done
@@ -14,6 +19,10 @@ def unpack_batchv2(batch):
 
 def unpack_batch(batch):
   return batch.state, batch.action, batch.next_state, batch.reward, batch.done
+
+
+def unpack_batch_pomdp(batch):
+  return batch.state, batch.obs, batch.action, batch.next_state, batch.next_obs, batch.reward, batch.done
 
 
 class Timer:
@@ -85,8 +94,64 @@ def batch_eval(policy, eval_env, seed=0):
 		action = policy.batch_select_action(state)
 		state, reward, terminated, truncated, _ = eval_env.step(action)
 		done = terminated or truncated
-		ep_ret += reward
+		ep_ret += reward.reshape((-1,1))
 
+	avg_ret = ep_ret.mean().item()
+	std_ret = ep_ret.std().item()
+
+	print("---------------------------------------")
+	print(
+		f"Evaluation avg return {avg_ret:.3f} $\pm$ {std_ret:.3f}")
+	print("---------------------------------------")
+	return None, avg_ret, std_ret, ep_ret
+
+
+def batch_eval_mtn_car(policy, eval_env, seed=0):
+	import torch
+	avg_len = 0.
+	ep_ret = torch.zeros((eval_env.sample_batch_size, 1), device=eval_env.device)
+	# eval_env.seed(i)
+	state, _ = eval_env.reset(seed=seed)
+	done = False
+	# print("eval_policy state", state)
+	while not done:
+		action = policy.batch_select_action(state)
+		state, reward, terminated, truncated, _ = eval_env.step(action)
+		done = terminated or truncated
+		ep_ret += reward.reshape((-1,1))
+
+	avg_ret = ep_ret.mean().item()
+	std_ret = ep_ret.std().item()
+
+	print("---------------------------------------")
+	print(
+		f"Evaluation avg return {avg_ret:.3f} $\pm$ {std_ret:.3f}")
+	print("---------------------------------------")
+	return None, avg_ret, std_ret, ep_ret
+
+
+def batch_eval_burgers(policy, eval_env, ctrl_pos = 100, obs_dim = 5,seed=0):
+	import torch
+	avg_len = 0.
+	ep_ret = torch.zeros((eval_env.sample_batch_size, 1), device=eval_env.device)
+	# eval_env.seed(i)
+	state, _ = eval_env.reset(seed=seed)
+	obs = state[:,ctrl_pos - obs_dim:ctrl_pos]
+	done = False
+	t = 0
+	# print("eval_policy state", state)
+	while not done:
+		action = policy.batch_select_action(obs)
+		state, reward, terminated, truncated, _ = eval_env.step(action)
+		obs = state[:,ctrl_pos - obs_dim:ctrl_pos]
+		done = terminated or truncated
+		if t % 50 ==0:
+			# print("reward eval at time %d" %t, reward)
+			print("state, t = %d" %t, state)
+			pass
+		ep_ret += reward.reshape((-1,1))
+		t += 1
+	# print("ep_ret", ep_ret)
 	avg_ret = ep_ret.mean().item()
 	std_ret = ep_ret.std().item()
 
@@ -130,6 +195,20 @@ def mlp(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):
 		mods = [nn.Linear(input_dim, hidden_dim), nn.ELU(inplace=True)]
 		for i in range(hidden_depth - 1):
 			mods += [nn.Linear(hidden_dim, hidden_dim), nn.ELU(inplace=True)]
+		mods.append(nn.Linear(hidden_dim, output_dim))
+	if output_mod is not None:
+		mods.append(output_mod)
+	trunk = nn.Sequential(*mods)
+	return trunk
+
+
+def mlp_relu(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):
+	if hidden_depth == 0:
+		mods = [nn.Linear(input_dim, output_dim)]
+	else:
+		mods = [nn.Linear(input_dim, hidden_dim), nn.ReLU(inplace=True)]
+		for i in range(hidden_depth - 1):
+			mods += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU(inplace=True)]
 		mods.append(nn.Linear(hidden_dim, output_dim))
 	if output_mod is not None:
 		mods.append(output_mod)

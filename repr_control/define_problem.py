@@ -12,8 +12,9 @@ action_dim = 1                      # action dimension
 state_range = [[-1, -1, -8],
                [1, 1, 8]]           # low and high. We set bound on the state to ensure stable training.
 action_range = [[-2], [2]]          # low and high
-max_step = 200                      # maximum rollout steps per episode
-sigma = 0.05                          # noise standard deviation.
+# max_step = 200                      # maximum rollout steps per episode
+max_step = 500
+sigma = 0.05                   # noise standard deviation.
 env_name = 'Pendulum'
 assert len(action_range[0]) == len(action_range[1]) == action_dim
 
@@ -81,6 +82,14 @@ def rewards(state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
 def initial_distribution(batch_size: int) -> torch.Tensor:
     th = 2 * np.pi * torch.rand((batch_size)) - np.pi
     thdot = 2 * torch.rand((batch_size)) - 1
+    return torch.vstack([torch.cos(th),
+                         torch.sin(th),
+                         thdot]).T
+
+
+def rand_distribution(batch_size: int) -> torch.Tensor:
+    th = (2 * np.pi * torch.rand((batch_size)) - np.pi) * 1
+    thdot = (2 * torch.rand((batch_size)) - 1) * 8
     return torch.vstack([torch.cos(th),
                          torch.sin(th),
                          thdot]).T

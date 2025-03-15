@@ -503,6 +503,7 @@ class CustomModelSACAgent(SACAgent):
                  policy_adjacency = None,
                  kappa_obs_dim = 1,
                  eval_kappa_obs_dim = 1,
+                 critic_use_ortho_init = True,
                  **kwargs
                  ):
 
@@ -527,6 +528,8 @@ class CustomModelSACAgent(SACAgent):
         self.policy_adjacency = policy_adjacency
         self.eval_adjacency = eval_adjacency
 
+        print("critic use ortho init",critic_use_ortho_init)
+
         self.action_low = torch.tensor(action_range[0], device=self.device)
         self.action_high = torch.tensor(action_range[1], device=self.device)
 
@@ -534,7 +537,9 @@ class CustomModelSACAgent(SACAgent):
             obs_dim=eval_kappa_obs_dim, 
             # hidden_dim=hidden_dim,
             hidden_dim = critic_hidden_dim,
-            hidden_depth=2,
+            # hidden_depth=1,
+            hidden_depth = 2,
+            use_ortho_init=critic_use_ortho_init
         ).to(self.device)
             for i in range(N)
         ]
@@ -601,7 +606,7 @@ class CustomModelSACAgent(SACAgent):
         # reward = self.get_reward(batch.state, self.rescale_action(action))  # use reward in q-fn
         
         # next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.state,action))
-        next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.state,self.rescale_action(action)))
+        next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(batch.state,self.rescale_action(action)))
         critic_params, critic_buffers = stack_module_state(self.critics)
         q1_vmap, q2_vmap = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
             critic_buffers,next_state_noiseless_concat)
@@ -612,7 +617,8 @@ class CustomModelSACAgent(SACAgent):
         q = self.discount * torch.min(q1_vmap,q2_vmap) + reward
 
 
-        actor_losses = (self.alphas/self.N * log_prob_vmap - q).mean(dim = 0) 
+        # actor_losses = (self.alphas/self.N * log_prob_vmap - q).mean(dim = 0) 
+        actor_losses = (self.alphas * log_prob_vmap - q).mean(dim = 0) 
         actor_loss = torch.sum(actor_losses) #sum up the N (avg) losses
 
         self.actor_optimizer.zero_grad()
@@ -668,7 +674,7 @@ class CustomModelSACAgent(SACAgent):
             # next_log_prob_vmap = vmap(self.batch_get_log_prob_local, in_dims = (1,1,1),out_dims = 1)(mu_vmap,std_vmap,next_actions_vmap)
             next_action = torch.reshape(next_actions_vmap,(next_state.size(0),-1))
             # next_next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.next_state,next_action))
-            next_next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.next_state,self.rescale_action(next_action)))
+            next_next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(batch.next_state,self.rescale_action(next_action)))
 
             next_q1, next_q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_target_params,
             critic_target_buffers,next_next_state_noiseless_concat)
@@ -680,7 +686,8 @@ class CustomModelSACAgent(SACAgent):
             # print("self.alphs shape", self.alphas.shape)
             # print("next action log pi shape", next_action_log_pi.shape)
             # print("next q1 shape", next_q1.shape)
-            next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas/self.N * next_action_log_pi
+            # next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas/self.N * next_action_log_pi
+            next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas * next_action_log_pi
 
             # dist = self.actor(next_state)
             # next_action = dist.rsample()
@@ -701,7 +708,7 @@ class CustomModelSACAgent(SACAgent):
             [critic_params[key] for key in critic_params_need_grad_keys], lr=self.lr, betas=[0.9, 0.999])
         # print("this is new_critic_optimizer", new_critic_optimizer)
         with torch.no_grad():
-            next_state_noiseless_concat = self.get_local_states(self.dynamics(state,self.rescale_action(action)))
+            next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(state,self.rescale_action(action)))
 
         # next_state_noiseless_concat = self.get_local_states(self.dynamics(state,action))
         q1, q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
@@ -747,10 +754,12 @@ class CustomModelSACAgent(SACAgent):
                 if param.requires_grad == True:
                     # print("this is new critic param name: %s grad" %name, critic_params[name].grad[0])
                     # print("this is new param name: %s tensor" %name, critic_params[name][i])
+                    # print("key = %s" % key, param.norm())
                     param.grad = critic_params[name].grad[i].clone()
                     # print(f"updated Parameter name: {name}, size: {param.size()}")
         self.critic_optimizer.step()
         # print("self critic state", self.critic_optimizer.state_dict())
+
 
 
         info = {

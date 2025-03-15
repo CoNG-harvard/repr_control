@@ -17,7 +17,7 @@ class CustomEnv(gymnasium.Env):
         "render_fps": 30,
     }
 
-    def __init__(self, dynamics: Callable, rewards: Callable, initial_distribution: Callable,
+    def __init__(self, dynamics: Callable, rewards: Callable, initial_distribution: Callable, rand_distribution: Callable,
                     state_range: list, action_range: list, sigma: float):
         self.observation_space = spaces.Box(low=np.array(state_range[0], dtype=np.float32),
                                             high=np.array(state_range[1], dtype=np.float32), dtype=np.float32)
@@ -26,6 +26,7 @@ class CustomEnv(gymnasium.Env):
         self.dynamics = dynamics
         self.rewards = rewards
         self.initial_distribution = initial_distribution
+        self.rand_distribution = rand_distribution
         self.sigma = sigma
 
     def reset(
@@ -38,6 +39,20 @@ class CustomEnv(gymnasium.Env):
             self.state = options['state']
         else:
             self.state = self.initial_distribution(batch_size = 1).squeeze().float().numpy()
+
+        return self.state, {}
+
+
+    def rand_reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[ObsType, dict[str, Any]]:
+        if options and 'state' in options.keys():
+            self.state = options['state']
+        else:
+            self.state = self.rand_distribution(batch_size = 1).squeeze().float().numpy()
 
         return self.state, {}
 
@@ -69,10 +84,11 @@ class CustomVecEnv(CustomEnv):
                  state_range,
                  action_range,
                  sigma,
+                 rand_distribution = None,
                  sample_batch_size=1024,
                  device='cuda',
                  max_episode_steps=None):
-        super().__init__(dynamics,rewards, initial_distribution,state_range,action_range,sigma)
+        super().__init__(dynamics,rewards, initial_distribution,rand_distribution,state_range,action_range,sigma)
         self.sample_batch_size = sample_batch_size
         self.device = torch.device(device)
         self.obs_low = torch.tensor(state_range[0], device=self.device)
@@ -85,9 +101,14 @@ class CustomVecEnv(CustomEnv):
         else:
             self.max_episode_steps = max_episode_steps
 
+    # def sample_action(self):
+    #     actions = torch.rand(size=(self.sample_batch_size, self.action_low.shape[0]), device=self.device)
+    #     return self.action_low.unsqueeze(dim=0) + 2 * (self.action_high - self.action_low).unsqueeze(dim=0) * actions
+
+    #always sample_action to be between -1 and 1
     def sample_action(self):
-        actions = torch.rand(size=(self.sample_batch_size, self.action_low.shape[0]), device=self.device)
-        return self.action_low.unsqueeze(dim=0) + 2 * (self.action_high - self.action_low).unsqueeze(dim=0) * actions
+        actions = 2 * (torch.rand(size=(self.sample_batch_size, self.action_low.shape[0]), device=self.device) - 0.5)
+        return actions
 
     def rescale_action(self, actions):
         """
@@ -111,14 +132,30 @@ class CustomVecEnv(CustomEnv):
 
         return self.state, {}
 
+
+    def rand_reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[ObsType, dict[str, Any]]:
+        if options and 'state' in options.keys():
+            self.state = options['state']
+        else:
+            self.state = self.rand_distribution(batch_size = self.sample_batch_size).float().to(self.device)
+
+        return self.state, {}
+
     def step(
         self, action: ActType
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
 
-
+        # print("action in env 2", action[-3:,:])
+        # print("rescaled action 2", self.rescale_action(action[-3:,:]))
         with torch.no_grad():
             next_state = self.dynamics(self.state, self.rescale_action(action))
         noisy_next_state = next_state + torch.normal(0, self.sigma, next_state.shape, device=self.device)
+        reward = self.rewards(self.state, action) #reward of current state, action
         self.state = torch.clip(noisy_next_state, self.obs_low, self.obs_high)
         reward = self.rewards(self.state, action)
         # reward = reward.squeeze().item()
@@ -130,6 +167,15 @@ class CustomVecEnv(CustomEnv):
         else:
             truncated = False
         return self.state, reward, done, truncated, info
+
+
+    def step_noiseless(
+        self, state,action):
+
+
+        with torch.no_grad():
+            next_state = self.dynamics(state, self.rescale_action(action))
+        return next_state
 
 def test_vec_env():
     from repr_control.define_problem import dynamics, rewards, initial_distribution, state_range, action_range, sigma

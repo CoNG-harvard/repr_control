@@ -39,14 +39,18 @@ class DoubleQCritic(nn.Module):
 
 class DoubleVCritic(nn.Module):
   """Critic network, employes double V-learning."""
-  def __init__(self, obs_dim, hidden_dim, hidden_depth):
+  def __init__(self, obs_dim, hidden_dim, hidden_depth, use_ortho_init = True):
     super().__init__()
 
     self.Q1 = util.mlp(obs_dim, hidden_dim, 1, hidden_depth)
     self.Q2 = util.mlp(obs_dim, hidden_dim, 1, hidden_depth)
 
+    # self.Q1 = util.mlp_relu(obs_dim, hidden_dim, 1, hidden_depth)
+    # self.Q2 = util.mlp_relu(obs_dim, hidden_dim, 1, hidden_depth)
+
     self.outputs = dict()
-    self.apply(util.weight_init)
+    if use_ortho_init == True:
+      self.apply(util.weight_init)
 
   def forward(self, obs):
     # assert obs.size(0) == action.size(0)

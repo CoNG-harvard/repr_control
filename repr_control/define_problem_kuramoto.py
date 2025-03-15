@@ -1,7 +1,6 @@
 """
 We need to define the nonlinear control problems in this file.
-Problem instanced based on "Distributed Model Predictive Control of 
-Bilinear HVAC Systems Using a Convexification Method"
+Problem instanced based on Kuramoto model
 """
 
 import torch
@@ -17,14 +16,14 @@ torch.manual_seed(0)
 ########################################################################################################################
 state_dim = 2                    # state dimension
 action_dim = 1                      # action dimension
-N = 5 # num of agents
+N = 10 # num of agents
 # state_range = [[15] * N,
 #                [40] * N]           # low and high. We set bound on the state to ensure stable training.
 state_range = [[-1,-1] * N,
                [1,1] * N]           # low and high. We set bound on the state to ensure stable training.
-action_range = [[-2] * N, [2] * N]          # low and high
+action_range = [[-4] * N, [4] * N]          # low and high
 max_step = 500                      # maximum rollout steps per episode
-sigma = 0.1                      # noise standard deviation.
+sigma = 0.05                      # noise standard deviation.
 env_name = 'kuramoto'
 assert len(action_range[0]) == len(action_range[1]) == action_dim * N
 
@@ -72,10 +71,10 @@ def get_neighbors(N,adjacency):
     return torch.tensor(neighbors, dtype = torch.int)
 
 
-omega = torch.rand(size = (N,), device=curr_device) * 0.5
+omega = torch.rand(size = (N,), device=curr_device) * 2.0
 
-# adjacency = build_adjacency(N)
-adjacency = torch.ones((N,N), dtype = torch.int) #try everybody connected for now.
+adjacency = build_adjacency(N)
+# adjacency = torch.ones((N,N), dtype = torch.int) #try everybody connected for now.
 P = get_P(N,adjacency)
 print("P", P)
 print("adjacency")
@@ -86,8 +85,9 @@ print("omega", omega)
 policy_adjacency = get_neighbors(N, adjacency)
 eval_adjacency = get_neighbors(N, adjacency)
 print("policy_adjacency", policy_adjacency)
-kappa_obs_dim = 10 #this is the dimension of the concatenation of the states of an agent's kappa-neighborhood neighbors
-eval_kappa_obs_dim = 10
+kappa_obs_dim = 6 #this is the dimension of the concatenation of the states of an agent's kappa-neighborhood neighbors
+eval_kappa_obs_dim = 6
+eval_kappa_action_dim = 3
 
 
 
@@ -115,6 +115,7 @@ def dynamics(state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
 
     """
 
+    # dt = 0.05
     dt = 0.01
 
     cos_th, sin_th = state[:,::2], state[:,1::2]
@@ -165,7 +166,8 @@ def rewards(state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
 
     local_diff_sq = (th_diff_squared * P).sum(dim = 2)
 
-    reward = -1 * (local_diff_sq  + 0.01 * action ** 2)
+    # reward = -1 * (local_diff_sq  + 0.01 * action ** 2)
+    reward = -1 * local_diff_sq
     return reward
 
 # output is tensor of dimension (batch_size, N)

@@ -125,13 +125,16 @@ class SACAgent(object):
 		target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
 		target_V = torch.min(target_Q1,
 													target_Q2) - self.alpha.detach() * log_prob
-		target_Q = reward + (not_done * self.discount * target_V)
+		target_Q = reward.reshape((-1,1)) + (not_done * self.discount * target_V)
 		target_Q = target_Q.detach()
 
 		# get current Q estimates
 		current_Q1, current_Q2 = self.critic(obs, action)
-		critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-				current_Q2, target_Q)
+		# print("current Q1 shape", current_Q1.shape)
+		# print("target Q shape", target_Q.shape)
+		q1_loss = F.mse_loss(current_Q1, target_Q)
+		q2_loss = F.mse_loss(current_Q2, target_Q)
+		critic_loss = q1_loss + q2_loss
 
 		# Optimize the critic
 		self.critic_optimizer.zero_grad()
@@ -139,7 +142,9 @@ class SACAgent(object):
 		self.critic_optimizer.step()
 
 		return {
-			'q_loss': critic_loss.item(), 
+			# 'q_loss': critic_loss.item(), 
+			'q1_loss': q1_loss.item(), 
+			'q2_loss': q2_loss.item(),
 			'q1': current_Q1.mean().item(),
 			'q2': current_Q1.mean().item()
 			}

@@ -1,12 +1,18 @@
 import time
 # import gym
 import numpy as np 
+import torch.nn.functional as F
 # import torch
 
 from torch import nn
 from torch import vmap
 import os
 import pickle as pkl
+
+
+from torch.func import functional_call
+from torch.func import stack_module_state
+from torch import vmap
 
 
 def unpack_batchv2(batch):
@@ -91,6 +97,7 @@ def batch_eval(policy, eval_env, seed=0):
 		# print("ep ret shape", ep_ret.shape)
 		# print("reward shape", reward.shape)
 		# print("reward mean shape", reward.mean(dim = 1).shape)
+		# print("reward[0].mean", reward[0].mean())
 		ep_ret += reward.mean(dim = 1, keepdims=True)
 
 	avg_ret = ep_ret.mean().item()
@@ -101,6 +108,40 @@ def batch_eval(policy, eval_env, seed=0):
 		f"Evaluation avg return {avg_ret:.3f} $\pm$ {std_ret:.3f}")
 	print("---------------------------------------")
 	return None, avg_ret, std_ret, ep_ret
+
+
+def batch_eval_discounted(agent, eval_env,seed=0, return_features = True):
+	import torch
+	avg_len = 0.
+	V_ret = torch.zeros((eval_env.sample_batch_size, agent.N), device=eval_env.device)
+	# eval_env.seed(i)
+	state, _ = eval_env.reset(seed=seed)
+	state_concat = agent.get_local_states_critic(state)
+	critic_params, critic_buffers = stack_module_state(agent.critic_targets)
+	if return_features == True:
+		phi1_vmap, phi2_vmap, v1_vmap, v2_vmap = vmap(agent.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
+			critic_buffers,state_concat)
+	else:
+		v1_vmap, v2_vmap = vmap(agent.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
+			critic_buffers,state_concat)
+	done = False
+	# print("v1 shape", v1_vmap.shape)
+	t = 0
+	while not done:
+		action = agent.batch_select_action_network(state)
+		state, reward, terminated, truncated, _ = eval_env.step(action)
+		done = terminated or truncated
+		# print("reward.shape", reward.shape)
+		V_ret += agent.discount**t * reward
+	print("V ret shape", V_ret)
+	print("v2", v2_vmap.reshape(state.size(0),agent.N))
+
+
+	print("---------------------------------------")
+	print(
+		f"MSE of V_ret - V_pi_learned {torch.mean((V_ret - v1_vmap.reshape(state.size(0),agent.N))**2):.3f}")
+	print("---------------------------------------")
+	return None, V_ret, torch.mean((V_ret - v1_vmap.reshape(state.size(0),agent.N))**2)
 
 
 

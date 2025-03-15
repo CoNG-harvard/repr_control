@@ -7,7 +7,8 @@ from datetime import datetime
 from repr_control.utils import util, buffer
 from repr_control.agent.sac import sac_agent
 from repr_control.agent.rfsac import rfsac_agent
-from define_problem import *
+# from define_problem import *
+from define_problem_lorenz import *
 from gymnasium.envs.registration import register
 import gymnasium
 import yaml
@@ -22,11 +23,11 @@ if __name__ == "__main__":
                         help="The algorithm to use. rfsac or sac.")
     parser.add_argument("--env", default='custom',
                         help="Name your env/dynamics, only for folder names.")  # Alg name (sac, vlsac)
-    parser.add_argument("--rf_num", default=512, type=int,
+    parser.add_argument("--rf_num", default=2048, type=int,
                         help="Number of random features. Suitable numbers for 2-dimensional system is 512, 3-dimensional 1024, etc.")
     parser.add_argument("--nystrom_sample_dim", default=8192, type=int,
                         help='The sampling dimension for nystrom critic. After sampling, take the maximum rf_num eigenvectors..')
-    parser.add_argument("--device", default='cpu', type=str,
+    parser.add_argument("--device", default='cuda:1', type=str,
                         help="pytorch device, cuda if you have nvidia gpu and install cuda version of pytorch. "
                              "mps if you run on apple silicon, otherwise cpu.")
 
@@ -37,7 +38,7 @@ if __name__ == "__main__":
                         help='the number of initial steps that collects data via random sampled actions.')  # Time steps initial random policy is used
     parser.add_argument("--eval_freq", default=5000, type=int,
                         help='number of iterations as the interval to evaluate trained policy.')  # How often (time steps) we evaluate
-    parser.add_argument("--max_timesteps", default=1e5, type=float,
+    parser.add_argument("--max_timesteps", default=5e5, type=float,
                         help='the total training time steps / iterations.')  # Max time steps to run environment
     parser.add_argument("--batch_size", default=256, type=int)  # Batch size for both actor and critic
     parser.add_argument("--hidden_dim", default=256, type=int)  # Network hidden dims
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     exp_name = f'seed_{args.seed}_{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}'
 
     # setup example_results
-    log_path = f'log/{alg_name}/{env_name}/{exp_name}'
+    log_path = f'log/non-vec/{alg_name}/{env_name}/{exp_name}'
     summary_writer = SummaryWriter(log_path + "/summary_files")
 
     # set seeds
@@ -90,6 +91,7 @@ if __name__ == "__main__":
                        dynamics=dynamics,
                        rewards=rewards,
                        initial_distribution = initial_distribution,
+                       rand_distribution = None,
                        state_range=state_range,
                        action_range=action_range,
                        sigma=sigma)
@@ -97,6 +99,7 @@ if __name__ == "__main__":
                             dynamics=dynamics,
                             rewards=rewards,
                             initial_distribution = initial_distribution,
+                            rand_distribution = None,
                             state_range=state_range,
                             action_range=action_range,
                             sigma=sigma)

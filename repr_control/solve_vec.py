@@ -7,7 +7,8 @@ from datetime import datetime
 from repr_control.utils import util, buffer
 from repr_control.agent.sac import sac_agent
 from repr_control.agent.rfsac import rfsac_agent
-from define_problem import *
+# from define_problem import *
+from define_problem_cartpole import *
 from gymnasium.envs.registration import register
 import gymnasium
 import yaml
@@ -27,7 +28,7 @@ if __name__ == "__main__":
                         help="Number of random features. Suitable numbers for 2-dimensional system is 512, 3-dimensional 1024, etc.")
     parser.add_argument("--nystrom_sample_dim", default=8192, type=int,
                         help='The sampling dimension for nystrom critic. After sampling, take the maximum rf_num eigenvectors..')
-    parser.add_argument("--device", default='cuda', type=str,
+    parser.add_argument("--device", default='cuda:0', type=str,
                         help="pytorch device, cuda if you have nvidia gpu and install cuda version of pytorch. "
                              "mps if you run on apple silicon, otherwise cpu.")
 
@@ -100,7 +101,8 @@ if __name__ == "__main__":
                             initial_distribution = initial_distribution,
                             state_range=state_range,
                             action_range=action_range,
-                            sigma=sigma)
+                            sigma=sigma,
+                            max_episode_steps = max_step)
         env = gymnasium.wrappers.RescaleAction(env, min_action=-1, max_action=1)
         eval_env = gymnasium.wrappers.RescaleAction(eval_env, min_action=-1, max_action=1)
     elif args.env == 'custom_vec':
@@ -113,7 +115,8 @@ if __name__ == "__main__":
                        action_range=action_range,
                        sigma=sigma,
                        sample_batch_size=args.batch_size,
-                       device=torch.device(args.device),)
+                       device=torch.device(args.device),
+                       max_episode_steps = max_step)
         eval_env = CustomVecEnv(
                        dynamics=dynamics,
                        rewards=rewards,
@@ -122,7 +125,8 @@ if __name__ == "__main__":
                        action_range=action_range,
                        sigma=sigma,
                        sample_batch_size=args.batch_size,
-                       device=torch.device(args.device),)
+                       device=torch.device(args.device),
+                       max_episode_steps = max_step)
     else:
         env = gymnasium.make(args.env)
         eval_env = gymnasium.make(args.env)
@@ -149,6 +153,10 @@ if __name__ == "__main__":
     with open(os.path.join(log_path, 'train_params.yaml'), 'w') as fp:
         yaml.dump(kwargs, fp, default_flow_style=False)
 
+    with open(os.path.join(log_path, 'train_params.pth'), 'wb') as f:  # 'wb' mode for writing in binary
+        torch.save(kwargs, f)
+        print("pytorch kwargs saved")
+
     for t in range(int(args.max_timesteps + args.start_timesteps)):
 
         episode_timesteps += 1
@@ -174,7 +182,7 @@ if __name__ == "__main__":
 		)
 
         state = next_state.clone()
-        episode_reward += reward
+        episode_reward += reward.reshape((-1,1))
         info = {}
 
         if t >= args.start_timesteps:

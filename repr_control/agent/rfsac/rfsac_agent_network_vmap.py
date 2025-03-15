@@ -127,15 +127,6 @@ class RLNetwork(nn.Module):
 #         self.neighbors = neighbors
 
 
-#         # if embedding_dim != -1:
-#         #     self.embed = nn.Linear(N * s_dim * (2 * kappa + 1), embedding_dim)
-#         # else:  # we don't add embed in this case
-#         #     embedding_dim = N * s_dim * (2 * kappa + 1)
-#         #     self.embed = nn.Linear(embedding_dim, embedding_dim)
-#         #     init.eye_(self.embed.weight)
-#         #     init.zeros_(self.embed.bias)
-#         #     self.embed.weight.requires_grad = False
-#         #     self.embed.bias.requires_grad = False
 
 #         self.omega1 = nn.Parameter(torch.randn(size = (N, s_dim * (2 * kappa + 1), 
 #             self.feature_dim)), std = 1./max(self.sigma,0.01), requires_grad = learn_rf)
@@ -277,6 +268,9 @@ class RFVCritic(RLNetwork):
             self.embed.weight.requires_grad = False
             self.embed.bias.requires_grad = False
 
+        # self.sigma = 0.5
+        # print("self sigma", self.sigma)
+
         # fourier_feats1 = nn.Linear(sa_dim, n_neurons)
         fourier_feats1 = nn.Linear(embedding_dim, self.feature_dim)
         # fourier_feats1 = nn.Linear(s_dim,n_neurons)
@@ -286,7 +280,6 @@ class RFVCritic(RLNetwork):
         else:
             init.normal_(fourier_feats1.weight)
         init.uniform_(fourier_feats1.bias, 0, 2 * np.pi)
-        # init.zeros_(fourier_feats.bias)
         fourier_feats1.weight.requires_grad = learn_rf
         fourier_feats1.bias.requires_grad = learn_rf
         self.fourier1 = fourier_feats1  # unnormalized, no cosine/sine yet
@@ -329,16 +322,14 @@ class RFVCritic(RLNetwork):
         # x = F.relu(x)
         x1 = self.fourier1(x)
         x2 = self.fourier2(x)
-        x1 = torch.cos(x1)
-        x2 = torch.cos(x2)
+        # x1 = math.sqrt(1./self.feature_dim) * torch.cat((torch.cos(x1), torch.sin(x1)),dim=-1)
+        # x2 = math.sqrt(1./self.feature_dim) * torch.cat((torch.cos(x2), torch.sin(x2)),dim=-1)
         # change to layer norm
-        # x1 = 10. * self.norm1(x1)
-        # x2 = 10. * self.norm2(x2)
         x1 = self.norm1(x1)
         x2 = self.norm2(x2)
         # print("x1 norm", torch.linalg.norm(x1,axis = 1))
         # x = torch.relu(x)
-        return self.output1(x1), self.output2(x2)
+        return x1,x2, self.output1(x1), self.output2(x2)
         # return self.output1(x1),self.output1(x1) #just testing if the min actually helps
 
     def get_norm(self):
@@ -346,6 +337,95 @@ class RFVCritic(RLNetwork):
         l2_norm = torch.norm(self.output2)
         return (l1_norm, l2_norm)
 
+
+class RFVCritic_no_layer_norm(RLNetwork):
+    def __init__(self, s_dim=3, embedding_dim=-1, rf_num=256, sigma=0.0, learn_rf=False, **kwargs):
+        super().__init__()
+        self.n_layers = 1
+        self.feature_dim = rf_num
+
+        self.sigma = sigma
+
+        if embedding_dim != -1:
+            self.embed = nn.Linear(s_dim, embedding_dim)
+        else:  # we don't add embed in this case
+            embedding_dim = s_dim
+            self.embed = nn.Linear(s_dim, s_dim)
+            init.eye_(self.embed.weight)
+            init.zeros_(self.embed.bias)
+            self.embed.weight.requires_grad = False
+            self.embed.bias.requires_grad = False
+
+        # fourier_feats1 = nn.Linear(sa_dim, n_neurons)
+        fourier_feats1 = nn.Linear(embedding_dim, self.feature_dim)
+        # fourier_feats1 = nn.Linear(s_dim,n_neurons)
+        if self.sigma > 0:
+            init.normal_(fourier_feats1.weight, std=1. / self.sigma)
+            # pass
+        else:
+            init.normal_(fourier_feats1.weight)
+        init.uniform_(fourier_feats1.bias, 0, 2 * np.pi)
+        # init.zeros_(fourier_feats.bias)
+        fourier_feats1.weight.requires_grad = learn_rf
+        fourier_feats1.bias.requires_grad = learn_rf
+        self.fourier1 = fourier_feats1  # unnormalized, no cosine/sine yet
+
+        fourier_feats2 = nn.Linear(embedding_dim, self.feature_dim)
+        # fourier_feats2 = nn.Linear(s_dim,n_neurons)
+        if self.sigma > 0:
+            init.normal_(fourier_feats2.weight, std=1. / self.sigma)
+            # pass
+        else:
+            init.normal_(fourier_feats2.weight)
+        init.uniform_(fourier_feats2.bias, 0, 2 * np.pi)
+        fourier_feats2.weight.requires_grad = learn_rf
+        fourier_feats2.bias.requires_grad = learn_rf
+        self.fourier2 = fourier_feats2
+
+        layer1 = nn.Linear(self.feature_dim, 1)  # try default scaling
+        # init.uniform_(layer1.weight, -3e-3,3e-3) #weight is the only thing we update
+        init.zeros_(layer1.bias)
+        layer1.bias.requires_grad = False  # weight is the only thing we update
+        self.output1 = layer1
+
+        layer2 = nn.Linear(self.feature_dim, 1)  # try default scaling
+        # init.uniform_(layer2.weight, -3e-3,3e-3) 
+        # init.uniform_(layer2.weight, -3e-4,3e-4)
+        init.zeros_(layer2.bias)
+        layer2.bias.requires_grad = False  # weight is the only thing we update
+        self.output2 = layer2
+
+    def forward(self, states: torch.Tensor):
+        x = states
+        x = self.embed(x) #use an embedding layer
+        # print("x embedding norm", torch.linalg.norm(x))
+        # x = F.relu(x)
+        x1 = self.fourier1(x)
+        x2 = self.fourier2(x)
+        x1 = torch.cos(x1)
+        x2 = torch.cos(x2)
+
+        return self.output1(x1), self.output2(x2)
+        # return self.output1(x1),self.output1(x1) #just testing if the min actually helps
+
+    def get_phi(self, states: torch.Tensor):
+        x = states
+        x = self.embed(x) #use an embedding layer
+        # print("x embedding norm", torch.linalg.norm(x))
+        # x = F.relu(x)
+        x1 = self.fourier1(x)
+        x2 = self.fourier2(x)
+        x1 = torch.cos(x1)
+        x2 = torch.cos(x2)
+
+        return x1, x2
+        # return self.output1(x1),self.output1(x1) #just testing if the min actually helps
+
+
+    def get_norm(self):
+        l1_norm = torch.norm(self.output1)
+        l2_norm = torch.norm(self.output2)
+        return (l1_norm, l2_norm)
 
 class nystromVCritic(RLNetwork):
     def __init__(self,
@@ -476,6 +556,11 @@ class DoubleQCritic(nn.Module):
 
         return q1, q2
 
+
+
+
+
+
 class CustomModelRFSACAgent(SACAgent):
 
     def __init__(self,
@@ -502,6 +587,7 @@ class CustomModelRFSACAgent(SACAgent):
                  policy_adjacency = None,
                  kappa_obs_dim = 1,
                  eval_kappa_obs_dim = 1,
+                 use_layer_norm = True,
                  **kwargs
                  ):
 
@@ -533,8 +619,12 @@ class CustomModelRFSACAgent(SACAgent):
 
         if use_nystrom == False:  # use RF
             # self.critic = RFVCritic(s_dim=state_dim, sigma=sigma, rf_num=rf_num, learn_rf=learn_rf, **kwargs).to(self.device)
-            self.critics = [RFVCritic(s_dim=eval_kappa_obs_dim, sigma=sigma, 
-                rf_num=rf_num, learn_rf=learn_rf, **kwargs).to(self.device) for i in range(N)]
+            if use_layer_norm == True:
+                self.critics = [RFVCritic(s_dim=eval_kappa_obs_dim, sigma=sigma, 
+                    rf_num=rf_num, learn_rf=learn_rf, **kwargs).to(self.device) for i in range(N)]
+            else:
+                self.critics = [RFVCritic_no_layer_norm(s_dim=eval_kappa_obs_dim, sigma=sigma, 
+                    rf_num=rf_num, learn_rf=learn_rf, **kwargs).to(self.device) for i in range(N)]
         else:  # use nystrom
             print("USE RF FOR NOW")
             feat_num = rf_num
@@ -561,6 +651,24 @@ class CustomModelRFSACAgent(SACAgent):
 
     def fmodel_critic(self,params,buffers,x):
         return functional_call(self.base_model_critic,(params,buffers),(x,))
+
+    # def get_phi(self,params, buffers,x):
+    #     mod_with_params = functional_call(self.base_model_critic, params, buffers)
+    #     return mod_with_params.get_phi(x)
+
+    def lstsq_fn(self,A,b,tol = 1e-5):
+        return torch.linalg.lstsq(A,b).solution
+        # U, S, Vh = torch.linalg.svd(AA, full_matrices=False)
+        # Spinv = torch.zeros_like(S)
+        # # Spinv[S>tol] = 1/S[S>tol]
+        # Spinv = (1/S).unsqueeze(-1)
+        # UhBB = U.adjoint() @ BB
+        # # print("Spinv dim", Spinv.ndim)
+        # # print("UhBB.ndim", UhBB.ndim)
+        # # if Spinv.ndim!=UhBB.ndim:
+        # #     Spinv = Spinv.unsqueeze(-1)
+        # SpinvUhBB = Spinv * UhBB
+        # return Vh.adjoint() @ SpinvUhBB
 
     def rescale_action(self, actions):
         """
@@ -603,9 +711,9 @@ class CustomModelRFSACAgent(SACAgent):
         # reward = self.get_reward(batch.state, self.rescale_action(action))  # use reward in q-fn
         
         # next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.state,action))
-        next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.state,self.rescale_action(action)))
+        next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(batch.state,self.rescale_action(action)))
         critic_params, critic_buffers = stack_module_state(self.critics)
-        q1_vmap, q2_vmap = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
+        phi1_vmap, phi2_vmap, q1_vmap, q2_vmap = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
             critic_buffers,next_state_noiseless_concat)
 
         q1_vmap = torch.reshape(q1_vmap, (q1_vmap.shape[0],self.N))
@@ -614,7 +722,8 @@ class CustomModelRFSACAgent(SACAgent):
         q = self.discount * torch.min(q1_vmap,q2_vmap) + reward
 
 
-        actor_losses = (self.alphas/self.N * log_prob_vmap - q).mean(dim = 0) 
+        # actor_losses = (self.alphas/self.N * log_prob_vmap - q).mean(dim = 0) 
+        actor_losses = (self.alphas * log_prob_vmap - q).mean(dim = 0) 
         actor_loss = torch.sum(actor_losses) #sum up the N (avg) losses
 
         self.actor_optimizer.zero_grad()
@@ -670,9 +779,9 @@ class CustomModelRFSACAgent(SACAgent):
             # next_log_prob_vmap = vmap(self.batch_get_log_prob_local, in_dims = (1,1,1),out_dims = 1)(mu_vmap,std_vmap,next_actions_vmap)
             next_action = torch.reshape(next_actions_vmap,(next_state.size(0),-1))
             # next_next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.next_state,next_action))
-            next_next_state_noiseless_concat = self.get_local_states(self.dynamics(batch.next_state,self.rescale_action(next_action)))
+            next_next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(batch.next_state,self.rescale_action(next_action)))
 
-            next_q1, next_q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_target_params,
+            _,_,next_q1, next_q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_target_params,
             critic_target_buffers,next_next_state_noiseless_concat)
             # next_q1 = torch.squeeze(next_q1)
             # next_q2 = torch.squeeze(next_q2)
@@ -682,7 +791,8 @@ class CustomModelRFSACAgent(SACAgent):
             # print("self.alphs shape", self.alphas.shape)
             # print("next action log pi shape", next_action_log_pi.shape)
             # print("next q1 shape", next_q1.shape)
-            next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas/self.N * next_action_log_pi
+            # next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas/self.N * next_action_log_pi
+            next_q = self.discount * torch.min(next_q1,next_q2) - self.alphas * next_action_log_pi
 
             # dist = self.actor(next_state)
             # next_action = dist.rsample()
@@ -703,10 +813,10 @@ class CustomModelRFSACAgent(SACAgent):
             [critic_params[key] for key in critic_params_need_grad_keys], lr=self.lr, betas=[0.9, 0.999])
         # print("this is new_critic_optimizer", new_critic_optimizer)
         with torch.no_grad():
-            next_state_noiseless_concat = self.get_local_states(self.dynamics(state,self.rescale_action(action)))
+            next_state_noiseless_concat = self.get_local_states_critic(self.dynamics(state,self.rescale_action(action)))
 
         # next_state_noiseless_concat = self.get_local_states(self.dynamics(state,action))
-        q1, q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
+        phi1,phi2,q1, q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(critic_params,
             critic_buffers,next_state_noiseless_concat)
         # q1 = torch.squeeze(q1)
         # q2 = torch.squeeze(q2)
@@ -724,26 +834,53 @@ class CustomModelRFSACAgent(SACAgent):
         # print("next_q", next_q)
         # print("target q", target_q)
 
+        # #do least squares
+
+        # # phi_1,phi_2 = vmap(self.get_phi, in_dims = (0,0,0))(
+        # #     critic_params, critic_buffers,next_state_noiseless_concat
+        # # )
+        # # print("phi1.shape", phi1.shape)
+        # # print("phi2.shape", phi2.shape)
+        # # print("target_q shape", target_q.shape)
+        # theta_1 = vmap(self.lstsq_fn, in_dims = (1,1),out_dims = 1)(phi1, target_q.unsqueeze(-1))
+        # # print("theta_1", theta_1)
+        # theta_2 = vmap(self.lstsq_fn, in_dims = (1,1),out_dims = 1)(phi2, target_q.unsqueeze(-1))
+        # # print("theta_2", theta_2.shape)
+
+
         # q1, q2 = self.critic(self.dynamics(state, action))
         q1_loss = F.mse_loss(target_q, q1)
         q2_loss = F.mse_loss(target_q, q2)
         q_loss = q1_loss + q2_loss
+
+        # for i in range(self.N):
+        #     for name, param in self.critics[i].named_parameters():
+        #         # print("name", name)
+        #         if name == 'output1.weight':
+        #             # print("im here")
+        #             with torch.no_grad():
+        #                 param.copy_(theta_1[:,i,0])
+        #         elif name == 'output2.weight':
+        #             with torch.no_grad():
+        #                 param.copy_(theta_2[:,i,0])
+
+        # new_critic_params, new_critic_buffers = stack_module_state(self.critics)        
+        # _,_,new_q1, new_q2 = vmap(self.fmodel_critic, in_dims = (0,0,1),out_dims = 1)(new_critic_params,
+        #     new_critic_buffers,next_state_noiseless_concat)
+        # # print("new q1 shape", new_q1.shape)
+        # # print("target q shape", target_q.shape)
+        # new_q1_loss = F.mse_loss(target_q, new_q1.reshape(new_q1.shape[0],self.N))
+        # new_q2_loss = F.mse_loss(target_q, new_q2.reshape(new_q2.shape[0],self.N))
+        # print("new q1 loss", new_q1_loss)
+        # # new_q_loss = F.mse_loss(target_q, new_q1) + F.mse_loss(target_q,new_q2)
+
+        # # print("old q1 - new q1", q1.unsqueeze(-1) - new_q1)
 
         self.critic_optimizer.zero_grad()
         new_critic_optimizer.zero_grad()
         # self.critics[0].output1.weight.retain_grad()
         # q1.retain_grad()
         q_loss.backward()
-
-        # for name, param in model.named_parameters():
-        #     print(f"Parameter name: {name}, size: {param.size()}")
-
-        # for key in critic_params.keys():
-        #     print("key", critic_params[key])
-
-        # print("critic_params output 1 weight grad[0] shape", critic_params["output1.weight"].grad[0].shape)
-        # print("critic_params output 1 weight grad[0,0,:10]", critic_params["output1.weight"].grad[0,0,:10])
-        # View the names and sizes of the parameters
         for i in range(self.N):
             for name, param in self.critics[i].named_parameters():
                 if param.requires_grad == True:
@@ -762,6 +899,8 @@ class CustomModelRFSACAgent(SACAgent):
         info = {
             'q1_loss': q1_loss.item(),
             'q2_loss': q2_loss.item(),
+            # 'new_q1_loss': new_q1_loss.item(),
+            # 'new_q2_loss': new_q2_loss.item(),
             'q1': q1.mean().item(),
             'q2': q2.mean().item(),
             # 'layer_norm_weights_norm': self.critic.norm.weight.norm(),

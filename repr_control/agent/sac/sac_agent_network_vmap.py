@@ -92,6 +92,8 @@ class SACAgent(object):
         # ]
         self.log_alphas = torch.tensor([np.log(alpha) for i in range(self.N)]).float().to(self.device) 
         self.log_alphas.requires_grad = True
+        # self.log_alphas = torch.tensor([np.log(alpha) for i in range(self.N)], device = self.device, requires_grad = True) 
+        # print("is leaf?", self.log_alphas[0].is_leaf)
         # for i in range(self.N):
         #     self.log_alphas[i].requires_grad = True
         self.target_entropy = -action_dim
@@ -183,6 +185,20 @@ class SACAgent(object):
         states = torch.reshape(states, (batchsize, self.N, -1))
         local_states_concat = torch.reshape(
             states[:, self.policy_adjacency, :], (batchsize, self.N, -1)
+        )
+        # print("local_states_concat", local_states_concat)
+        return local_states_concat
+
+
+    # Takes in a B by N * m tensor
+    # Outputs a B by N by (2*kappa + 1) *m tensor
+    def get_local_states_critic(self, states: torch.Tensor):
+        # first reshape states into B by N by m
+        # print("states", states)
+        batchsize = states.size()[0]
+        states = torch.reshape(states, (batchsize, self.N, -1))
+        local_states_concat = torch.reshape(
+            states[:, self.eval_adjacency, :], (batchsize, self.N, -1)
         )
         # print("local_states_concat", local_states_concat)
         return local_states_concat

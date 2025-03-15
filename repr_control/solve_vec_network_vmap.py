@@ -10,7 +10,13 @@ from repr_control.agent.rfsac import rfsac_agent_network_vmap
 # from define_problem_network import *
 # from define_problem_2pendulum import *
 # from define_problem_network_hvac import *
-from define_problem_kuramoto import *
+# from define_problem_kuramoto import *
+# from define_problem_kuramoto_v2 import *
+# from define_problem_kuramoto_v2_thdot import *
+from define_problem_kuramoto_v2_thdot_signed_omega import *
+# from define_problem_kuramoto_v2_thdot_2nd_order import *
+# from define_problem_kuramoto_v3 import *
+# from define_problem_pend_vmap import *
 from gymnasium.envs.registration import register
 import gymnasium
 import yaml
@@ -35,28 +41,31 @@ if __name__ == "__main__":
                              "mps if you run on apple silicon, otherwise cpu.")
 
     ### Parameters that usually don't need to be changed.
-    parser.add_argument("--seed", default=10, type=int,
+    parser.add_argument("--seed", default=0, type=int,
                         help='random seed.')  # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--start_timesteps", default=0, type=float,
                         help='the number of initial steps that collects data via random sampled actions.')  # Time steps initial random policy is used
     parser.add_argument("--eval_freq", default=100, type=int,
                         help='number of iterations as the interval to evaluate trained policy.')  # How often (time steps) we evaluate
-    parser.add_argument("--max_timesteps", default=1e5, type=float,
+    parser.add_argument("--max_timesteps", default=1e4, type=float,
                         help='the total training time steps / iterations.')  # Max time steps to run environment
-    parser.add_argument("--batch_size", default=512, type=int)  # Batch size for both actor and critic
+    parser.add_argument("--batch_size", default=128, type=int)  # Batch size for both actor and critic
     parser.add_argument("--hidden_dim", default=256, type=int)  # Network hidden dims
     parser.add_argument("--feature_dim", default=256, type=int)  # Latent feature dim
-    parser.add_argument("--discount", default=0.99)  # Discount factor
-    parser.add_argument("--tau", default=0.005)  # Target network update rate
+    parser.add_argument("--discount", default=0.99, type = float)  # Discount factor
+    parser.add_argument("--tau", default=0.005, type = float)  # Target network update rate
+    parser.add_argument("--rf_sigma", default=0.0, type = float)  # Target network update rate
+    # parser.add_argument("--tau", default=0.1)  # Target network update rate
     parser.add_argument("--embedding_dim", default=-1, type=int)  # if -1, do not add embedding layer
 
     parser.add_argument("--use_nystrom", action='store_true')
     parser.add_argument("--use_random_feature", dest='use_nystrom', action='store_false')
+    parser.add_argument("--use_layer_norm",  action='store_false')
     # parser.add_argument("--n_agents", default = 1, type=int)
     parser.set_defaults(use_nystrom=False)
     args = parser.parse_args()
 
-    learn_rf = True
+    learn_rf = False
     alg_name = args.alg
     exp_name = f'seed_{args.seed}_{datetime.now().strftime("%Y-%m-%d-%H-%M-%S")}'
 
@@ -87,7 +96,7 @@ if __name__ == "__main__":
 
 
     # setup example_results
-    log_path = f'log/{alg_name}/{env_name}/{exp_name}/N={N}/sigma={sigma}/rf_num={args.rf_num}/learn_rf={args.learn_rf}'
+    log_path = f'log/{alg_name}/{env_name}/N={N}/kappa={eval_kappa}/sigma={sigma}/rf_sigma={args.rf_sigma}/rf_num={args.rf_num}/learn_rf={args.learn_rf}/batchsize={args.batch_size}/use_layer_norm={args.use_layer_norm}/tau={args.tau}/{exp_name}'
     summary_writer = SummaryWriter(log_path + "/summary_files")
 
 
@@ -103,6 +112,7 @@ if __name__ == "__main__":
         # agent = rfsac_agent_network.CustomModelRFSACAgent(dynamics_fn = dynamics, rewards_fn = rewards, **kwargs)
         agent = rfsac_agent_network_vmap.CustomModelRFSACAgent(dynamics_fn = dynamics, 
                                                                rewards_fn = rewards, 
+                                                               sigma = args.rf_sigma,
                                                             #    learn_rf = True,
                                                                **kwargs)
     else:
@@ -149,7 +159,7 @@ if __name__ == "__main__":
                        state_range=state_range,
                        action_range=action_range,
                        sigma=sigma,
-                       sample_batch_size=args.batch_size,
+                       sample_batch_size=1024,
                        max_episode_steps = max_step,
                        device=torch.device(args.device),)
     else:
@@ -255,6 +265,9 @@ if __name__ == "__main__":
                     torch.save(best_critics[i], log_path + "/best_critic_%d.pth"%i)
 
             best_eval_reward = max(evaluations)
+
+            _,V_ret,V_mean_err = util_network.batch_eval_discounted(agent, eval_env)
+            info.update({"mean V_err": V_mean_err})
 
         if (t + 1) % 500 == 0:
             for key, value in info.items():
