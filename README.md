@@ -2,18 +2,18 @@
 
 [![Documentation](https://img.shields.io/badge/Documentation-Online-blue)](https://repr-control-orgnaization.readthedocs.io/en/latest/)
 
-
-
 repr-control is a toolbox to solve nonlinear stochastic control via representation learning. 
-User can simply input the **dynamics, rewards, initial distributions** [sample_files](repr_control/define_problem.py) of the nonlinear control problem
+User can simply input the [**dynamics, rewards, initial distributions**](repr_control/define_problem.py) of the nonlinear control problem
 and get the optimal controller parametrized by a neural network.
 
+### Please refer to our [[documentation]](https://repr-control-orgnaization.readthedocs.io/en/latest/) on how to define custom nonlinear control problems and train the controller.
+
 The optimal controller is trained via Spectral Dynamics Embedding Control (SDEC) algorithm based on representation learning and reinforcement learning.
-For those interested in the details of SDEC algorithm, please check our [papers](https://arxiv.org/abs/2304.03907).
+For those interested in the details of the SDEC algorithm, please check our [papers](https://arxiv.org/abs/2304.03907).
 
 ## Installation
-1. Install anaconda and git (if you haven't).
-2. Create new environment,
+1. Install Anaconda and git (if you haven't).
+2. Create a new environment,
    
    **Windows** : Open Anaconda prompt.   **Mac** or **Linux** : Open Terminal:
     
@@ -47,8 +47,6 @@ For those interested in the details of SDEC algorithm, please check our [papers]
 Helpful resources: 
 - [Anaconda environment](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html)
 - [PyTorch installation](https://pytorch.org/get-started/locally/)
-
-## Please refer to our [documentation](https://repr-control-orgnaization.readthedocs.io/en/latest/) on how to train the controller.
 
 ## Citations
 ```
